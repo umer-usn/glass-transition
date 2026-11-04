@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1075.12" height="597.987" viewBox="0 0 1075.12 597.987" fill="none">
+  <!-- Figma "Vector 1" (368:1057) — unblurred. Figma applies a PROGRESSIVE blur (0 at the lit edge → radius 100 by 43% down); glass-block.css rebuilds that with stacked blurred copies. -->
+  <path d="M593.592 100H441.766L122.404 382.556C76.6816 423.009 105.67 498.519 166.716 497.984L909.578 491.472C972.328 490.922 998.969 411.357 949.202 373.132L593.592 100Z" fill="url(#g)"/>
+  <defs>
+    <linearGradient id="g" x1="531.957" y1="100" x2="531.957" y2="499.531" gradientUnits="userSpaceOnUse">
+      <stop stop-color="white"/>
+      <stop offset="1" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+</svg>
