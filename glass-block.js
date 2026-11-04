@@ -67,7 +67,7 @@
   }
 
   const NS = 'http://www.w3.org/2000/svg';
-  function buildFilter(root, id) {
+  function buildFilter(root, id, LITE) {
     const svg = document.createElementNS(NS, 'svg');
     svg.setAttribute('class', 'gb-defs');
     svg.setAttribute('aria-hidden', 'true');
@@ -125,12 +125,52 @@
     }
 
     const fid = `gb-refract-${++uid}`;
+    let lite = LITE;                       // 1 displacement pass instead of 3 (no colour fringing)
     let fx = null;
-    if (USE_SVG_FX) fx = buildFilter(root, fid);
+    if (USE_SVG_FX) fx = buildFilter(root, fid, lite);
 
     let W = 0, H = 0, oy = 0, range = 1;
     let target = 0, cur = 0, frozen = false, raf = 0, last = 0, visible = true;
-    let lastMapAspect = 0;
+    let lastMapAspect = 0, mapUrl = '';
+    let lastD = 0, warmed = false, slow = 0;
+
+    // Size the filter region + lens map to the stage
+    function sizeFx() {
+      if (!fx) return;
+      fx.filter.setAttribute('width', W); fx.filter.setAttribute('height', H);
+      fx.img.setAttribute('width', W); fx.img.setAttribute('height', H);
+      if (mapUrl) {
+        fx.img.setAttribute('href', mapUrl);
+        fx.img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', mapUrl);
+      }
+    }
+
+    // First use of an SVG filter is the expensive one (shader compile + map decode).
+    // Run it once, invisibly, while the light is still fading in, so the crossing doesn't hitch.
+    function warm() {
+      if (!fx || warmed) return;
+      warmed = true;
+      stage.style.filter = `url(#${fid})`; fxOn = true;
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (lastD <= 0.002) { stage.style.filter = 'none'; fxOn = false; }
+      }));
+    }
+
+    // If frames are still slow while the filter is on, step the effect down:
+    // 3-pass chromatic refraction → 1-pass refraction → plain CSS blur.
+    function degrade() {
+      if (!fx) return;
+      fx.filter.parentNode.remove();
+      fxOn = false;
+      if (!lite) {
+        lite = true;
+        fx = buildFilter(root, fid, true);
+        sizeFx();
+      } else {
+        fx = null;
+      }
+      render(cur);
+    }
 
     function fit() {
       W = stage.clientWidth; H = stage.clientHeight;
@@ -147,16 +187,13 @@
       stage.style.setProperty('--oy', oy + 'px');
       range = Math.max(1, root.offsetHeight - H);
       if (fx) {
-        const f = fx.filter;
-        f.setAttribute('width', W); f.setAttribute('height', H);
-        fx.img.setAttribute('width', W); fx.img.setAttribute('height', H);
         const aspect = +(W / H).toFixed(2);
         if (aspect !== lastMapAspect) {
           lastMapAspect = aspect;
-          const url = buildLensMap(aspect);
-          fx.img.setAttribute('href', url);
-          fx.img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', url);
+          mapUrl = buildLensMap(aspect);
+          const pre = new Image(); pre.src = mapUrl; if (pre.decode) pre.decode().catch(() => {});
         }
+        sizeFx();
       }
       measure();
     }
@@ -164,7 +201,9 @@
     function measure() {
       const r = root.getBoundingClientRect();
       const vh = innerHeight;
-      root.classList.toggle('is-lit', r.top < vh * 0.28 && r.bottom > vh * 0.2);
+      const lit = r.top < vh * 0.28 && r.bottom > vh * 0.2;
+      root.classList.toggle('is-lit', lit);
+      if (lit) warm();
       visible = r.bottom > -50 && r.top < vh + 50;
       if (!frozen) {
         target = clamp(-r.top / range);
@@ -176,7 +215,13 @@
 
     function tick(t) {
       raf = 0;
-      const dt = Math.min(0.05, (t - (last || t)) / 1000); last = t;
+      const raw = (t - (last || t)) / 1000;
+      const dt = Math.min(0.05, raw); last = t;
+      // slow frames while the refraction is running → lower the effect quality
+      if (fx && fxOn && lastD > 0.15 && raw > 0) {
+        slow = raw > 0.028 ? slow + 1 : Math.max(0, slow - 1);
+        if (slow >= 8) { slow = 0; degrade(); }
+      }
       const k = 1 - Math.exp(-dt * 10);
       cur += (target - cur) * k;
       if (Math.abs(target - cur) < 0.0002) cur = target;
@@ -185,7 +230,7 @@
     }
 
     /* ---- The choreography ------------------------------------------------ */
-    let fxOn = false;
+    let fxOn = false, card2Init = false;
     function render(p) {
       // Only the cards move. Headline, subtitle and light stay put.
       // camera push into the front card
@@ -202,8 +247,10 @@
       el.card1.style.opacity = (1 - gone).toFixed(3);
       el.card1.style.visibility = gone >= 1 ? 'hidden' : 'visible';
       const t1 = seg(p, 0.14, 0.42);
+      // once the text has faded out, stop painting (and blurring) it entirely
+      el.body1.style.visibility = t1 >= 1 ? 'hidden' : 'visible';
       el.body1.style.opacity = (1 - t1).toFixed(3);
-      el.body1.style.filter = t1 > 0.01 ? `blur(${(t1 * 14).toFixed(1)}px)` : 'none';
+      el.body1.style.filter = t1 > 0.01 && t1 < 1 ? `blur(${(t1 * 14).toFixed(1)}px)` : 'none';
       el.card1.style.setProperty('--gb-fill', zl.toFixed(3));
       el.card1.style.setProperty('--gb-sheen', lerp(-0.4, 1.4, seg(p, 0.02, 0.44)).toFixed(3));
 
@@ -215,8 +262,11 @@
       const b2 = lerp(2, 0, reveal); // Figma: layer blur 4 → 2px
       el.card2.style.filter = b2 > 0.05 ? `blur(${b2.toFixed(2)}px)` : 'none';
       el.body2.style.opacity = lerp(0.35, 1, reveal).toFixed(3);
-      el.card2.style.setProperty('--gb-fill', '0');
-      el.card2.style.setProperty('--gb-sheen', '-0.4');
+      if (!card2Init) {   // constant — set once, not every frame
+        card2Init = true;
+        el.card2.style.setProperty('--gb-fill', '0');
+        el.card2.style.setProperty('--gb-sheen', '-0.4');
+      }
 
       // overlays: frost veil + expanding refraction rings
       el.veil.style.opacity = (0.22 * D).toFixed(3);
@@ -235,10 +285,11 @@
 
       // the glass refraction itself
       const on = D > 0.002;
+      lastD = D;
       if (fx && on) {
         const S = D * CFG.maxDisp;
         fx.blur.setAttribute('stdDeviation', (D * CFG.maxBlur).toFixed(2));
-        fx.disps.forEach((n, i) => n.setAttribute('scale', (S * (LITE ? 1 : CFG.chroma[i])).toFixed(1)));
+        fx.disps.forEach((n, i) => n.setAttribute('scale', (S * (lite ? 1 : CFG.chroma[i])).toFixed(1)));
         if (!fxOn) { stage.style.filter = `url(#${fid})`; fxOn = true; }
       } else if (fx && fxOn) {
         stage.style.filter = 'none'; fxOn = false;
@@ -258,6 +309,7 @@
     // Debug / tuning hook:  GlassBlock.set(0.5)  freezes the sequence at p; GlassBlock.release() unfreezes.
     (window.GlassBlock = window.GlassBlock || {}).set = (p) => { frozen = true; target = cur = clamp(p); render(cur); };
     window.GlassBlock.release = () => { frozen = false; measure(); };
+    window.GlassBlock.degrade = degrade;   // step the effect quality down by one level (also used automatically)
   }
 
   const start = () => document.querySelectorAll('.glass-block').forEach(init);

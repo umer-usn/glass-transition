@@ -55,6 +55,12 @@
 }
 
 /* ---- Light (Figma vector "Vector 1", blur baked into the SVG) ----------- */
+.gb-beam,
+.gb-copy {
+  /* static content: keep it as a cached GPU texture so the refraction filter
+     doesn't re-rasterise six blurred layers + text on every frame */
+  will-change: transform;
+}
 .gb-beam {
   -webkit-mask-image: linear-gradient(180deg, transparent var(--beam-y), #000 calc(var(--beam-y) + var(--gb-fade-len, 0px)));
           mask-image: linear-gradient(180deg, transparent var(--beam-y), #000 calc(var(--beam-y) + var(--gb-fade-len, 0px)));
@@ -165,8 +171,8 @@
     inset -14px -14px 22px -14px rgb(255 255 255 / calc(0.12 * var(--gb-lit))),
     /* dispersion: faint warm/cool split along the inner edge */
     inset 2px 2px 3px -1px rgb(255 120 140 / calc(0.13 * var(--gb-lit))),
-    inset -2px -2px 3px -1px rgb(120 160 255 / calc(0.15 * var(--gb-lit))),
-    0 24px 60px rgb(0 0 0 / 0.4);
+    inset -2px -2px 3px -1px rgb(120 160 255 / calc(0.15 * var(--gb-lit)));
+  /* (no outer drop shadow: it is invisible on #000 and, scaled 6.5×, was a 390px blur per frame) */
 }
 .gb-card--1 { z-index: 2; }
 .gb-card--2 { z-index: 1; }
@@ -196,7 +202,6 @@
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  mix-blend-mode: screen;
   background: linear-gradient(105deg,
     transparent calc(var(--gb-sheen) * 100% - 16%),
     rgb(255 255 255 / 0.2) calc(var(--gb-sheen) * 100%),
@@ -261,7 +266,7 @@
   inset: 0;
   opacity: 0;
   pointer-events: none;
-  mix-blend-mode: screen;
+  will-change: opacity;
   background: radial-gradient(ellipse 62% 72% at 50% var(--oy),
     rgb(255 255 255 / 0.55) 0%, rgb(255 255 255 / 0.22) 45%, rgb(255 255 255 / 0.06) 100%);
 }
@@ -275,7 +280,7 @@
   border-radius: 50%;
   opacity: 0;
   pointer-events: none;
-  mix-blend-mode: screen;
+  will-change: transform, opacity;   /* soft gradient: rasterise once, scale on the GPU */
   background: radial-gradient(circle,
     transparent 55%, rgb(255 255 255 / 0) 57%,
     rgb(255 255 255 / 0.85) 60%, rgb(255 255 255 / 0.3) 64%, transparent 71%);
